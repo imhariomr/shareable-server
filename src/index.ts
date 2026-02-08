@@ -16,27 +16,44 @@ const io = new Server(httpServer, {
     origin: "*"
   }
 });
-
+const peerToSocket = new Map(); 
 io.on("connection", (socket) => {
-  console.log("Connected:", socket.id);
+  const peerId = socket.handshake.auth.peerId;
 
-  socket.emit("id", socket.id);
+  if (!peerId) {
+    console.log("No peerId, disconnecting");
+    socket.disconnect();
+    return;
+  }
+  peerToSocket.set(peerId, socket.id);
 
-  socket.on("signal", ({ to, data }) => {
-    io.to(to).emit("signal", {
-      from: socket.id,
+  socket.on("signal", ({ toPeerId, data }) => {
+    const targetSocketId = peerToSocket.get(toPeerId);
+
+    if (!targetSocketId) {
+      console.log("Target peer offline:", toPeerId);
+      return;
+    }
+
+    io.to(targetSocketId).emit("signal", {
+      fromPeerId: peerId,
       data
     });
   });
 
-  socket.on("connection established", ({ to }) => {
-    io.to(to).emit("connection established",{
-      from: socket.id,
+  socket.on("connection-established", ({ toPeerId }) => {
+    const targetSocketId = peerToSocket.get(toPeerId);
+
+    if (!targetSocketId) return;
+
+    io.to(targetSocketId).emit("connection-established", {
+      fromPeerId: peerId
     });
   });
 
   socket.on("disconnect", () => {
-    console.log("Disconnected:", socket.id);
+    console.log("Disconnected peer:", peerId);
+    peerToSocket.delete(peerId);
   });
 });
 
